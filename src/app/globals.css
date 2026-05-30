@@ -4,127 +4,321 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ----------------------------------------------------------------------------
+   ATLAS DESIGN TOKENS
+   A dark editorial palette inspired by Mapbox Studio + Pacific Northwest:
+   deep slate-navy ground, cream foreground, evergreen for ground truth,
+   salmon-amber for the model, tidal teal accent.
+   ---------------------------------------------------------------------------- */
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
+
+  /* Fonts wired through next/font (loaded in layout.tsx). */
+  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --font-heading: var(--font-display);
+
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Editorial palette tokens — used directly throughout. */
+  --color-atlas-ink: var(--atlas-ink);
+  --color-atlas-ink-dim: var(--atlas-ink-dim);
+  --color-atlas-ink-subtle: var(--atlas-ink-subtle);
+  --color-atlas-rule: var(--atlas-rule);
+  --color-atlas-rule-strong: var(--atlas-rule-strong);
+  --color-atlas-surface: var(--atlas-surface);
+  --color-atlas-surface-2: var(--atlas-surface-2);
+  --color-atlas-paper: var(--atlas-paper);
+  --color-atlas-evergreen: var(--atlas-evergreen);
+  --color-atlas-salmon: var(--atlas-salmon);
+  --color-atlas-tidal: var(--atlas-tidal);
+  --color-atlas-amber: var(--atlas-amber);
+  --color-atlas-crimson: var(--atlas-crimson);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Light fallback — we ship dark by default but keep this clean for prefers-color-scheme */
+  --background: oklch(0.98 0.005 80);
+  --foreground: oklch(0.18 0.012 240);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --card-foreground: oklch(0.18 0.012 240);
+  --popover: oklch(0.98 0.005 80);
+  --popover-foreground: oklch(0.18 0.012 240);
+  --primary: oklch(0.55 0.13 200);
+  --primary-foreground: oklch(0.98 0.005 80);
+  --secondary: oklch(0.94 0.01 80);
+  --secondary-foreground: oklch(0.18 0.012 240);
+  --muted: oklch(0.94 0.01 80);
+  --muted-foreground: oklch(0.45 0.02 80);
+  --accent: oklch(0.94 0.02 200);
+  --accent-foreground: oklch(0.18 0.012 240);
+  --destructive: oklch(0.55 0.18 25);
+  --border: oklch(0.88 0.01 80);
+  --input: oklch(0.88 0.01 80);
+  --ring: oklch(0.6 0.13 200);
+
+  --atlas-ink: oklch(0.18 0.012 240);
+  --atlas-ink-dim: oklch(0.45 0.02 80);
+  --atlas-ink-subtle: oklch(0.65 0.02 80);
+  --atlas-rule: oklch(0.88 0.01 80);
+  --atlas-rule-strong: oklch(0.72 0.015 80);
+  --atlas-surface: oklch(1 0 0);
+  --atlas-surface-2: oklch(0.96 0.008 80);
+  --atlas-paper: oklch(0.98 0.005 80);
+  --atlas-evergreen: oklch(0.5 0.11 160);
+  --atlas-salmon: oklch(0.62 0.14 35);
+  --atlas-tidal: oklch(0.6 0.13 200);
+  --atlas-amber: oklch(0.7 0.14 75);
+  --atlas-crimson: oklch(0.55 0.18 25);
+
+  --chart-1: var(--atlas-evergreen);
+  --chart-2: var(--atlas-salmon);
+  --chart-3: var(--atlas-tidal);
+  --chart-4: var(--atlas-amber);
+  --chart-5: oklch(0.55 0.15 280);
+
+  --sidebar: oklch(0.96 0.008 80);
+  --sidebar-foreground: oklch(0.18 0.012 240);
+  --sidebar-primary: oklch(0.5 0.11 160);
+  --sidebar-primary-foreground: oklch(0.98 0.005 80);
+  --sidebar-accent: oklch(0.94 0.01 80);
+  --sidebar-accent-foreground: oklch(0.18 0.012 240);
+  --sidebar-border: oklch(0.88 0.01 80);
+  --sidebar-ring: oklch(0.6 0.13 200);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Editorial dark — the primary mode. Deep slate-navy with warm cream type. */
+  --background: oklch(0.16 0.012 240);
+  --foreground: oklch(0.94 0.012 80);
+  --card: oklch(0.20 0.013 240);
+  --card-foreground: oklch(0.94 0.012 80);
+  --popover: oklch(0.18 0.013 240);
+  --popover-foreground: oklch(0.94 0.012 80);
+  --primary: oklch(0.78 0.10 195);
+  --primary-foreground: oklch(0.16 0.012 240);
+  --secondary: oklch(0.24 0.013 240);
+  --secondary-foreground: oklch(0.94 0.012 80);
+  --muted: oklch(0.22 0.013 240);
+  --muted-foreground: oklch(0.65 0.018 90);
+  --accent: oklch(0.26 0.025 200);
+  --accent-foreground: oklch(0.94 0.012 80);
+  --destructive: oklch(0.65 0.19 28);
+  --border: oklch(0.28 0.013 230);
+  --input: oklch(0.24 0.013 240);
+  --ring: oklch(0.78 0.10 195);
+
+  /* Atlas tokens (the canonical palette referenced throughout components). */
+  --atlas-ink:        oklch(0.94 0.012 80);    /* warm cream — primary copy        */
+  --atlas-ink-dim:    oklch(0.70 0.012 80);    /* secondary copy, labels           */
+  --atlas-ink-subtle: oklch(0.52 0.012 80);    /* tertiary, captions, hairlines    */
+  --atlas-rule:       oklch(0.28 0.013 230);   /* default hairline                 */
+  --atlas-rule-strong:oklch(0.36 0.013 230);   /* prominent rule, table borders    */
+  --atlas-surface:    oklch(0.20 0.013 240);   /* primary card surface             */
+  --atlas-surface-2:  oklch(0.23 0.013 240);   /* elevated panel, hover            */
+  --atlas-paper:      oklch(0.16 0.012 240);   /* page background                  */
+  --atlas-evergreen:  oklch(0.78 0.13 160);    /* Ground Truth signature           */
+  --atlas-salmon:     oklch(0.78 0.13 30);     /* Selected Model signature         */
+  --atlas-tidal:      oklch(0.80 0.12 200);    /* Accent / Spearman / interactive  */
+  --atlas-amber:      oklch(0.82 0.14 75);     /* Warning, IQR, recall             */
+  --atlas-crimson:    oklch(0.68 0.18 25);     /* Diverging / destructive          */
+
+  --chart-1: var(--atlas-evergreen);
+  --chart-2: var(--atlas-salmon);
+  --chart-3: var(--atlas-tidal);
+  --chart-4: var(--atlas-amber);
+  --chart-5: oklch(0.70 0.16 290);
+
+  --sidebar: oklch(0.18 0.013 240);
+  --sidebar-foreground: oklch(0.94 0.012 80);
+  --sidebar-primary: oklch(0.78 0.10 195);
+  --sidebar-primary-foreground: oklch(0.16 0.012 240);
+  --sidebar-accent: oklch(0.24 0.013 240);
+  --sidebar-accent-foreground: oklch(0.94 0.012 80);
+  --sidebar-border: oklch(0.28 0.013 230);
+  --sidebar-ring: oklch(0.78 0.10 195);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring/40;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
+
   html {
-    @apply font-sans;
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "ss03", "cv11";
+  }
+
+  body {
+    @apply text-foreground;
+    background-color: var(--atlas-paper);
+    font-size: 14px;
+    line-height: 1.55;
+    /* Topographic atmosphere — soft cartographic gradients layered over the base.
+       Subtle enough to be felt, not seen. */
+    background-image:
+      radial-gradient(circle at 20% 0%, oklch(0.22 0.025 200 / 0.55) 0%, transparent 55%),
+      radial-gradient(circle at 90% 100%, oklch(0.22 0.04 30 / 0.30) 0%, transparent 60%),
+      linear-gradient(180deg, oklch(0.16 0.012 240) 0%, oklch(0.14 0.012 245) 100%);
+    background-attachment: fixed;
+  }
+
+  .atlas-body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(oklch(0.94 0.012 80 / 0.025) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-position: 0 0;
+    z-index: 0;
+    mix-blend-mode: screen;
+  }
+
+  .atlas-body > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Typography classes (consume directly in JSX). */
+  .font-display { font-family: var(--font-display); font-feature-settings: "ss01"; font-optical-sizing: auto; }
+  .font-sans    { font-family: var(--font-sans); }
+  .font-mono    { font-family: var(--font-mono); font-feature-settings: "tnum","ss01","zero","cv03"; }
+  .tabular      { font-variant-numeric: tabular-nums; }
+
+  /* Editorial small-caps label — tracked uppercase. */
+  .atlas-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--atlas-ink-subtle);
+  }
+
+  /* Section number annotation, e.g. "§ 03". */
+  .atlas-section-no {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    color: var(--atlas-ink-subtle);
+  }
+
+  /* Hairline rule — the editorial separator. */
+  .atlas-rule {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--atlas-rule-strong) 30%,
+      var(--atlas-rule-strong) 70%,
+      transparent 100%
+    );
+  }
+  .atlas-rule-vertical {
+    width: 1px;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      var(--atlas-rule-strong) 30%,
+      var(--atlas-rule-strong) 70%,
+      transparent 100%
+    );
+  }
+
+  /* The big numeric callout — used in KPIs and composite scores. */
+  .atlas-numeric {
+    font-family: var(--font-mono);
+    font-feature-settings: "tnum", "zero", "ss01";
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    color: var(--atlas-ink);
+  }
+
+  /* Selection styling — uses the tidal accent. */
+  ::selection {
+    background: oklch(0.78 0.10 195 / 0.35);
+    color: var(--atlas-ink);
+  }
+
+  /* Recharts text styling — without this every chart looks like a default. */
+  .recharts-cartesian-axis-tick-value,
+  .recharts-polar-angle-axis-tick-value,
+  .recharts-polar-radius-axis-tick-value,
+  .recharts-legend-item-text {
+    font-family: var(--font-mono) !important;
+    font-size: 10.5px !important;
+    fill: var(--atlas-ink-dim) !important;
+    letter-spacing: 0.04em;
+  }
+  .recharts-cartesian-grid line,
+  .recharts-polar-grid line {
+    stroke: var(--atlas-rule) !important;
+  }
+  .recharts-tooltip-wrapper {
+    outline: none !important;
+  }
+  .atlas-tooltip {
+    border: 1px solid var(--atlas-rule-strong);
+    background: var(--atlas-surface);
+    padding: 10px 12px;
+    box-shadow: 0 14px 28px oklch(0 0 0 / 0.35);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--atlas-ink);
+  }
+
+  /* MapLibre canvas should look like part of the atlas, not float. */
+  .maplibregl-canvas {
+    outline: none !important;
+  }
+  .maplibregl-ctrl-attrib {
+    background: oklch(0.18 0.013 240 / 0.72) !important;
+    color: var(--atlas-ink-dim) !important;
+    font-family: var(--font-mono) !important;
+    font-size: 10px !important;
+  }
+  .maplibregl-ctrl-attrib a {
+    color: var(--atlas-ink) !important;
   }
 }
