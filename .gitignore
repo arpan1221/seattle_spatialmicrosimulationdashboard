@@ -46,6 +46,5 @@ precompute/out/
 precompute/__pycache__/
 *.pyc
 
-# local tile / parquet artifacts (production reads from Vercel Blob)
-public/tiles/*.pmtiles
-public/data/*.parquet
+# Phase 4 will move tiles + parquet to Vercel Blob.
+# For now we commit them so previews work out of the box.

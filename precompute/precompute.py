@@ -2,26 +2,28 @@
 Pre-compute synthetic-population validation metrics for the Seattle CBSA dashboard.
 
 Reads the 11 model CSVs + HTS ground truth + TIGER shapefiles, runs OPTICS
-clustering, Moran's I / LISA, and cluster matching, and writes the results
-to Parquet + PMTiles for the Next.js frontend to consume.
+clustering and cluster matching, and writes results to Parquet + GeoJSON
+for the Next.js frontend to consume.
 
 Run locally on data changes:
     python precompute/precompute.py --data-root /path/to/SPATIAL-MICROSIMULATION_DOWNLOADS
 
 Outputs (written to precompute/out/):
-    - tracts.geojson       Simplified WGS84 tract polygons (input to Tippecanoe)
-    - counties.geojson     Three Seattle CBSA counties as raw GeoJSON
-    - models.parquet       Per (model, geoid, cluster_type, percentile_method)
-                           the proportion, cluster id, centroid (lat, lon)
-    - analysis.parquet     Per (model, cluster_type, percentile_method)
-                           precision/recall/F1/Spearman, Moran's I, LISA agreement,
-                           Jaccard sweep, IQR ratio, KS, composite score
-    - cluster_matches.parquet  Per matched pair: gt_cluster, model_cluster,
-                               distance_km, rate diffs
+    - tracts.geojson         Simplified WGS84 tract polygons (input to Tippecanoe)
+    - counties.geojson       Three Seattle CBSA counties as raw GeoJSON
+    - models.parquet         Per (model, geoid) the prop_yes/no + cluster id per
+                             (cluster_type, percentile_method)
+    - cluster_stats.parquet  Per (source, model, cluster_type, percentile_method, cluster)
+                             centroid + mean rate + tract count
+    - analysis.parquet       Per (model, cluster_type, percentile_method)
+                             precision/recall/F1/Spearman/mean_distance
 
-Tippecanoe step (run after this script):
+Phase 3 will add: Moran's I, LISA, Jaccard sweep, KS, composite radar.
+
+Tippecanoe step:
     tippecanoe -o precompute/out/tracts.pmtiles -Z8 -z14 \\
         --coalesce-densest-as-needed --extend-zooms-if-still-dropping \\
+        --no-tile-compression \\
         precompute/out/tracts.geojson
 """
 
@@ -32,31 +34,31 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-# These imports are intentionally lazy — the file should import cleanly
-# even if the heavy deps aren't installed yet; we only need them inside main().
-
-
-CBSA_CODE = "42660"  # Seattle-Tacoma-Bellevue
+CBSA_CODE = "42660"
 STATE_FIPS = "53"
-TARGET_COUNTY_FPS = ["033", "053", "061"]  # King, Pierce, Snohomish
+TARGET_COUNTY_FPS = ["033", "053", "061"]
 
-# Friendly names mirror the streamlit `models` dict
 MODELS: dict[str, dict] = {
-    "df2":  {"name": "Baseline Unweighted",                        "path": "Output_CSVs/Seattle_synthetic_population_baseline_unweighted.csv"},
-    "df3":  {"name": "Baseline Weighted",                          "path": "Output_CSVs/Seattle_synthetic_population_baseline_weighted.csv"},
-    "df4":  {"name": "ACM Weighted",                               "path": "Output_CSVs/Seattle_synthetic_population_ACM_weighted.csv"},
-    "df5":  {"name": "ACM Unweighted",                             "path": "Output_CSVs/Seattle_synthetic_population_ACM_unweighted.csv"},
-    "df6":  {"name": "Geographic Nested",                          "path": "IPF/Seattle_synthetic_population_geographic_nested_corrected.csv"},
-    "df7":  {"name": "Geographic Nested ACM Unweighted",           "path": "IPF/Seattle_synthetic_population_geographic_nested_ACM_unweighted.csv"},
-    "df8":  {"name": "P-MEDM IPF",                                 "path": "R_code_IPF/ipf_results_washington/synthetic_population.csv",                 "remap_remote": True},
-    "df9":  {"name": "ACM nested with firm size",                  "path": "IPF/Seattle_synthetic_population_withNOEMP.csv"},
-    "df10": {"name": "IP with uncertainty with firm size",         "path": "R_code_IPF/ipf_results_washington/synthetic_population_withNOEMP.csv",      "remap_remote": True},
-    "df11": {"name": "Nested IPF with firm size + Seattle subsample", "path": "IPF/Seattle_synthetic_population_withNOEMP_subsample.csv"},
+    "df2":  {"name": "Baseline Unweighted",                          "path": "Output_CSVs/Seattle_synthetic_population_baseline_unweighted.csv"},
+    "df3":  {"name": "Baseline Weighted",                            "path": "Output_CSVs/Seattle_synthetic_population_baseline_weighted.csv"},
+    "df4":  {"name": "ACM Weighted",                                 "path": "Output_CSVs/Seattle_synthetic_population_ACM_weighted.csv"},
+    "df5":  {"name": "ACM Unweighted",                               "path": "Output_CSVs/Seattle_synthetic_population_ACM_unweighted.csv"},
+    "df6":  {"name": "Geographic Nested",                            "path": "IPF/Seattle_synthetic_population_geographic_nested_corrected.csv"},
+    "df7":  {"name": "Geographic Nested ACM Unweighted",             "path": "IPF/Seattle_synthetic_population_geographic_nested_ACM_unweighted.csv"},
+    "df8":  {"name": "P-MEDM IPF",                                   "path": "R_code_IPF/ipf_results_washington/synthetic_population.csv",            "remap_remote": True},
+    "df9":  {"name": "ACM nested with firm size",                    "path": "IPF/Seattle_synthetic_population_withNOEMP.csv"},
+    "df10": {"name": "IP with uncertainty with firm size",           "path": "R_code_IPF/ipf_results_washington/synthetic_population_withNOEMP.csv", "remap_remote": True},
+    "df11": {"name": "Nested IPF with firm size + Seattle subsample","path": "IPF/Seattle_synthetic_population_withNOEMP_subsample.csv"},
 }
 
 PERCENTILE_METHODS = ["70th", "75th", "25th", "IQR"]
 CLUSTER_TYPES = ["yes", "no"]
-JACCARD_THRESHOLDS = [round(0.10 + 0.05 * i, 2) for i in range(18)]  # 0.10..0.95
+
+# OPTICS hyperparameters mirror the streamlit app
+OPTICS_MIN_SAMPLES = 3
+OPTICS_MAX_EPS = 0.02           # radians; ~ 2.2 km on Earth's surface
+OPTICS_XI = 0.05
+MATCH_THRESHOLD_KM = 5.0
 
 
 @dataclass
@@ -71,24 +73,9 @@ class Paths:
 
 def parse_args() -> Paths:
     p = argparse.ArgumentParser()
-    p.add_argument(
-        "--data-root",
-        type=Path,
-        required=True,
-        help="Root of SPATIAL-MICROSIMULATION_DOWNLOADS (model CSVs live here)",
-    )
-    p.add_argument(
-        "--shapefiles-dir",
-        type=Path,
-        default=Path.home() / "Downloads",
-        help="Directory containing tl_2024_53_tract.zip, tl_2025_us_county.zip, tl_2024_us_cbsa (1).zip",
-    )
-    p.add_argument(
-        "--out-dir",
-        type=Path,
-        default=Path(__file__).parent / "out",
-        help="Output directory for parquet + geojson",
-    )
+    p.add_argument("--data-root", type=Path, required=True)
+    p.add_argument("--shapefiles-dir", type=Path, default=Path.home() / "Downloads")
+    p.add_argument("--out-dir", type=Path, default=Path(__file__).parent / "out")
     a = p.parse_args()
     return Paths(
         data_root=a.data_root,
@@ -101,7 +88,6 @@ def parse_args() -> Paths:
 
 
 def load_geometry(paths: Paths):
-    """Load + filter + simplify the Seattle CBSA tracts and the 3 target counties."""
     import geopandas as gpd
 
     cbsa = gpd.read_file(paths.cbsa_zip)
@@ -118,10 +104,9 @@ def load_geometry(paths: Paths):
     tracts["geometry"] = tracts["geometry"].simplify(tolerance=100, preserve_topology=True)
     tracts = tracts[tracts.geometry.notna() & ~tracts.geometry.is_empty & tracts.geometry.is_valid]
 
-    # Compute centroids in 3857, then reproject to 4326 alongside the polygons.
     tracts["centroid_3857"] = tracts.geometry.centroid
     tracts_wgs84 = tracts.to_crs(4326)
-    centroids_wgs84 = gpd.GeoSeries(tracts["centroid_3857"], crs=3857).to_crs(4326)
+    centroids_wgs84 = gpd.GeoSeries(tracts["centroid_3857"].values, crs=3857).to_crs(4326)
     tracts_wgs84["longitude"] = centroids_wgs84.x.values
     tracts_wgs84["latitude"] = centroids_wgs84.y.values
     tracts_wgs84["GEOID"] = tracts_wgs84["GEOID"].astype(str).str.zfill(11)
@@ -139,7 +124,6 @@ def load_geometry(paths: Paths):
 
 
 def load_hts(paths: Paths):
-    """Load HTS ground truth (per-tract proportions)."""
     import pandas as pd
 
     hts = pd.read_csv(paths.hts_csv).dropna()
@@ -152,7 +136,6 @@ def load_hts(paths: Paths):
 
 
 def aggregate_model_to_tract(model_csv: Path, remap_remote: bool):
-    """CBG-level model → tract-level binary remote proportions."""
     import pandas as pd
 
     df = pd.read_csv(model_csv)
@@ -167,26 +150,137 @@ def aggregate_model_to_tract(model_csv: Path, remap_remote: bool):
     return agg
 
 
-# ---------------------------------------------------------------------------
-# TODO Phase 1: cluster() / cluster_matches() / morans()
-# Stubbed signatures so the orchestrator below compiles; implementations
-# come next once we wire up the data flow end-to-end.
-# ---------------------------------------------------------------------------
+def percentile_filter(values, method: str):
+    """Return a boolean mask of rows to keep for clustering, per streamlit logic."""
+    import numpy as np
 
-def cluster_optics(coords_df, value_col: str, threshold: float):
-    """Returns (cluster_label_series, cluster_stats_df). TODO Phase 1."""
-    raise NotImplementedError
+    if method == "75th":
+        return values >= np.quantile(values, 0.75)
+    if method == "25th":
+        return values >= np.quantile(values, 0.25)
+    if method == "IQR":
+        q25, q75 = np.quantile(values, [0.25, 0.75])
+        return (values >= q25) & (values <= q75)
+    # default: 70th
+    return values >= np.quantile(values, 0.70)
 
-def cluster_matches(gt_stats, model_stats, threshold_km: float = 5.0):
-    """Returns (matches_df, metrics_dict). TODO Phase 1."""
-    raise NotImplementedError
 
-def morans(gdf, value_col: str):
-    """Returns dict with global I + LISA arrays. TODO Phase 1."""
-    raise NotImplementedError
+def run_optics(coords_df, value_col: str):
+    """OPTICS cluster on (lat, lon) rows, returns (labels, stats_df).
+
+    coords_df must contain GEOID, longitude, latitude, <value_col>.
+    """
+    import numpy as np
+    import pandas as pd
+    from sklearn.cluster import OPTICS
+
+    if len(coords_df) < 5:
+        labels = np.full(len(coords_df), -1, dtype=int)
+        return labels, pd.DataFrame(columns=["cluster", "center_lat", "center_lon", "mean_rate", "n_tracts"])
+
+    coords_rad = np.radians(coords_df[["latitude", "longitude"]].values)
+    clusterer = OPTICS(
+        min_samples=OPTICS_MIN_SAMPLES,
+        max_eps=OPTICS_MAX_EPS,
+        metric="haversine",
+        cluster_method="xi",
+        xi=OPTICS_XI,
+    )
+    labels = clusterer.fit_predict(coords_rad)
+
+    stats_rows = []
+    for cid in sorted(set(labels) - {-1}):
+        mask = labels == cid
+        sub = coords_df.loc[mask]
+        stats_rows.append({
+            "cluster": int(cid),
+            "center_lat": float(sub["latitude"].mean()),
+            "center_lon": float(sub["longitude"].mean()),
+            "mean_rate": float(sub[value_col].mean()),
+            "n_tracts": int(mask.sum()),
+        })
+    return labels, pd.DataFrame(stats_rows)
+
+
+def haversine_km(lat1, lon1, lat2, lon2):
+    import numpy as np
+    lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
+    return 2 * np.arcsin(np.sqrt(a)) * 6371.0
+
+
+def match_clusters(gt_stats, model_stats, threshold_km: float = MATCH_THRESHOLD_KM):
+    """Streamlit-style nearest-centroid match. Returns (matches_df, metrics)."""
+    from math import inf
+    import pandas as pd
+    from scipy.stats import spearmanr
+
+    if len(gt_stats) == 0 or len(model_stats) == 0:
+        return pd.DataFrame(), {
+            "n_gt_clusters": int(len(gt_stats)),
+            "n_model_clusters": int(len(model_stats)),
+            "n_matches": 0,
+            "precision": 0.0, "recall": 0.0, "f1": 0.0,
+            "spearman": 0.0, "mean_distance_km": 0.0,
+        }
+
+    matches = []
+    for _, g in gt_stats.iterrows():
+        best_j, best_d = None, inf
+        for j, m in model_stats.iterrows():
+            d = haversine_km(g["center_lat"], g["center_lon"], m["center_lat"], m["center_lon"])
+            if d < best_d and d < threshold_km:
+                best_d, best_j = d, j
+        if best_j is not None:
+            m = model_stats.loc[best_j]
+            matches.append({
+                "gt_cluster": int(g["cluster"]),
+                "model_cluster": int(m["cluster"]),
+                "distance_km": float(best_d),
+                "gt_rate": float(g["mean_rate"]),
+                "model_rate": float(m["mean_rate"]),
+                "rate_diff": abs(float(g["mean_rate"]) - float(m["mean_rate"])),
+                "gt_size": int(g["n_tracts"]),
+                "model_size": int(m["n_tracts"]),
+            })
+
+    matches_df = pd.DataFrame(matches)
+    n_matches = len(matches_df)
+    precision = n_matches / len(model_stats) if len(model_stats) else 0.0
+    recall = n_matches / len(gt_stats) if len(gt_stats) else 0.0
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+
+    if n_matches >= 3:
+        rho, _ = spearmanr(matches_df["gt_rate"], matches_df["model_rate"])
+        spearman = 0.0 if (rho is None or rho != rho) else float(rho)
+    else:
+        spearman = 0.0
+
+    return matches_df, {
+        "n_gt_clusters": int(len(gt_stats)),
+        "n_model_clusters": int(len(model_stats)),
+        "n_matches": int(n_matches),
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+        "spearman": spearman,
+        "mean_distance_km": float(matches_df["distance_km"].mean()) if n_matches else 0.0,
+    }
+
+
+def write_geojson(gdf, path: Path, id_col: str | None) -> None:
+    gj = json.loads(gdf.to_json())
+    if id_col:
+        for feat in gj["features"]:
+            feat["id"] = feat["properties"].get(id_col, feat.get("id"))
+    path.write_text(json.dumps(gj))
 
 
 def main() -> None:
+    import numpy as np
+    import pandas as pd
+
     paths = parse_args()
     paths.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -198,22 +292,23 @@ def main() -> None:
     print(f"[precompute]   {len(tracts)} tracts, {len(counties)} counties")
 
     print("[precompute] writing tracts.geojson + counties.geojson")
-    # GeoJSON FeatureCollection with GEOID as the feature id (matches MapLibre).
-    def to_geojson(gdf, id_col: str) -> dict:
-        gj = json.loads(gdf.to_json())
-        for feat in gj["features"]:
-            feat["id"] = feat["properties"].get(id_col, feat.get("id"))
-        return gj
-
-    (paths.out_dir / "tracts.geojson").write_text(
-        json.dumps(to_geojson(tracts[["GEOID", "longitude", "latitude", "geometry"]], "GEOID"))
+    write_geojson(
+        tracts[["GEOID", "longitude", "latitude", "geometry"]],
+        paths.out_dir / "tracts.geojson",
+        "GEOID",
     )
-    (paths.out_dir / "counties.geojson").write_text(
-        json.dumps(to_geojson(counties[["COUNTYFP", "NAME", "geometry"]].rename(columns={"COUNTYFP": "id"}), "id"))
+    write_geojson(
+        counties[["COUNTYFP", "NAME", "geometry"]],
+        paths.out_dir / "counties.geojson",
+        "COUNTYFP",
     )
 
-    print("[precompute] loading HTS ground truth + 11 model CSVs...")
+    coord_lookup = tracts[["GEOID", "longitude", "latitude"]].copy()
+
+    print("[precompute] loading HTS ground truth...")
     hts = load_hts(paths)
+
+    print("[precompute] loading 11 model CSVs and aggregating to tract...")
     model_rows = []
     for key, meta in MODELS.items():
         csv_path = paths.data_root / meta["path"]
@@ -225,26 +320,107 @@ def main() -> None:
         agg["model"] = key
         agg["model_name"] = meta["name"]
         model_rows.append(agg)
-
     if not model_rows:
         raise SystemExit("No model CSVs found — check --data-root")
 
-    import pandas as pd
     long_models = pd.concat(model_rows, ignore_index=True)
+    long_models = long_models.merge(coord_lookup, on="GEOID", how="inner")
     print(f"[precompute] long_models: {len(long_models)} rows across {long_models['model'].nunique()} models")
 
-    # Phase 1 will replace this with the full clustering + analysis sweep.
-    # For Phase 0 we just write a proportions-only parquet so the frontend
-    # has something to talk to end-to-end.
-    out_df = long_models.merge(
-        hts.rename(columns={"prop_yes_telework": "gt_prop_yes", "prop_no_telework": "gt_prop_no"}),
-        on="GEOID",
-        how="left",
+    # Ground truth as a pseudo-model named "gt" so the cluster sweep is uniform.
+    gt_block = hts.merge(coord_lookup, on="GEOID", how="inner").rename(
+        columns={"prop_yes_telework": "prop_yes", "prop_no_telework": "prop_no"}
     )
-    out_df.to_parquet(paths.out_dir / "models.parquet", index=False)
-    print(f"[precompute] wrote {paths.out_dir / 'models.parquet'} ({len(out_df)} rows)")
+    gt_block["model"] = "gt"
+    gt_block["model_name"] = "Ground Truth"
 
-    print("[precompute] Phase 0 complete. Next: implement cluster_optics + morans + cluster_matches.")
+    base = pd.concat(
+        [long_models[["GEOID", "longitude", "latitude", "model", "model_name", "prop_yes", "prop_no"]],
+         gt_block[["GEOID", "longitude", "latitude", "model", "model_name", "prop_yes", "prop_no"]]],
+        ignore_index=True,
+    )
+
+    print("[precompute] running OPTICS clustering sweep...")
+    cluster_label_frames = []
+    stats_frames = []
+    for model_key in base["model"].unique():
+        for cluster_type in CLUSTER_TYPES:
+            value_col = "prop_yes" if cluster_type == "yes" else "prop_no"
+            for method in PERCENTILE_METHODS:
+                sub = base[base["model"] == model_key].copy()
+                mask = percentile_filter(sub[value_col].values, method)
+                clustered_sub = sub.loc[mask, ["GEOID", "longitude", "latitude", value_col]].reset_index(drop=True)
+                labels, stats = run_optics(clustered_sub, value_col)
+                clustered_sub["cluster"] = labels
+
+                # Per-tract label frame (only tracts with cluster != -1)
+                kept = clustered_sub[clustered_sub["cluster"] != -1].copy()
+                kept["model"] = model_key
+                kept["cluster_type"] = cluster_type
+                kept["percentile_method"] = method
+                cluster_label_frames.append(kept[["GEOID", "model", "cluster_type", "percentile_method", "cluster"]])
+
+                if len(stats):
+                    stats = stats.copy()
+                    stats["model"] = model_key
+                    stats["cluster_type"] = cluster_type
+                    stats["percentile_method"] = method
+                    stats_frames.append(stats)
+
+    cluster_labels = pd.concat(cluster_label_frames, ignore_index=True) if cluster_label_frames else pd.DataFrame(
+        columns=["GEOID", "model", "cluster_type", "percentile_method", "cluster"]
+    )
+    cluster_stats = pd.concat(stats_frames, ignore_index=True) if stats_frames else pd.DataFrame(
+        columns=["cluster", "center_lat", "center_lon", "mean_rate", "n_tracts", "model", "cluster_type", "percentile_method"]
+    )
+
+    print(f"[precompute]   cluster_labels: {len(cluster_labels)} rows")
+    print(f"[precompute]   cluster_stats:  {len(cluster_stats)} rows")
+
+    print("[precompute] matching every (model, cluster_type, method) against ground truth...")
+    analysis_rows = []
+    matches_frames = []
+    for (ct, method), gt_grp in cluster_stats[cluster_stats["model"] == "gt"].groupby(["cluster_type", "percentile_method"]):
+        for model_key in [k for k in base["model"].unique() if k != "gt"]:
+            model_grp = cluster_stats[
+                (cluster_stats["model"] == model_key)
+                & (cluster_stats["cluster_type"] == ct)
+                & (cluster_stats["percentile_method"] == method)
+            ]
+            matches_df, metrics = match_clusters(gt_grp, model_grp)
+            if len(matches_df):
+                matches_df["model"] = model_key
+                matches_df["cluster_type"] = ct
+                matches_df["percentile_method"] = method
+                matches_frames.append(matches_df)
+            analysis_rows.append({
+                "model": model_key,
+                "cluster_type": ct,
+                "percentile_method": method,
+                **metrics,
+            })
+
+    analysis = pd.DataFrame(analysis_rows)
+    matches = pd.concat(matches_frames, ignore_index=True) if matches_frames else pd.DataFrame()
+    print(f"[precompute]   analysis: {len(analysis)} rows")
+    print(f"[precompute]   matches:  {len(matches)} rows")
+
+    print("[precompute] writing parquet artifacts...")
+    # models.parquet: wide-ish — proportions per (model, geoid). Cluster labels live separately.
+    models_out = base[["model", "model_name", "GEOID", "longitude", "latitude", "prop_yes", "prop_no"]].copy()
+    models_out.to_parquet(paths.out_dir / "models.parquet", index=False)
+    cluster_labels.to_parquet(paths.out_dir / "cluster_labels.parquet", index=False)
+    cluster_stats.to_parquet(paths.out_dir / "cluster_stats.parquet", index=False)
+    analysis.to_parquet(paths.out_dir / "analysis.parquet", index=False)
+    if len(matches):
+        matches.to_parquet(paths.out_dir / "cluster_matches.parquet", index=False)
+
+    print("[precompute] Phase 1 complete.")
+    print(f"[precompute]   {paths.out_dir / 'models.parquet'}")
+    print(f"[precompute]   {paths.out_dir / 'cluster_labels.parquet'}")
+    print(f"[precompute]   {paths.out_dir / 'cluster_stats.parquet'}")
+    print(f"[precompute]   {paths.out_dir / 'analysis.parquet'}")
+    print(f"[precompute]   {paths.out_dir / 'cluster_matches.parquet'}")
 
 
 if __name__ == "__main__":
