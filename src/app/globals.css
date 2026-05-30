@@ -308,6 +308,11 @@
     color: var(--atlas-ink);
   }
 
+  /* MapLibre's stylesheet sets .maplibregl-map { position: relative }, which
+     defeats Tailwind's `absolute` utility when we layer two maps. Force the
+     class when we want it. */
+  .maplibregl-map.absolute { position: absolute !important; }
+
   /* MapLibre canvas should look like part of the atlas, not float. */
   .maplibregl-canvas {
     outline: none !important;

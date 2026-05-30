@@ -316,12 +316,12 @@ export function CompareMap() {
       onPointerUp={onPointerUp}
     >
       {/* Left map: ground truth (evergreen). Always full-bleed. */}
-      <div ref={leftRef} className="absolute inset-0" />
+      <div ref={leftRef} className="absolute inset-0 h-full w-full" />
 
       {/* Right map: selected model (salmon). Clipped to right of divider. */}
       <div
         ref={rightRef}
-        className="absolute inset-0"
+        className="absolute inset-0 h-full w-full"
         style={{ clipPath: `inset(0 0 0 ${dividerPct})` }}
       />
 

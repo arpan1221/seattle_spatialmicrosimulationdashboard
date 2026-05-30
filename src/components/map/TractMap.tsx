@@ -260,7 +260,7 @@ export function TractMap({ source, title, variant, modelKey }: TractMapProps) {
 
       {/* Map canvas */}
       <div className="relative flex-1">
-        <div ref={containerRef} className="absolute inset-0" />
+        <div ref={containerRef} className="absolute inset-0 h-full w-full" />
       </div>
 
       {/* Footer: ramp legend */}
