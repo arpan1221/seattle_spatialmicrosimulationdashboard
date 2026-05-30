@@ -16,6 +16,14 @@ export const CLUSTER_MATCHES_PARQUET = `${DATA_BASE}/cluster_matches.parquet`;
 export const JACCARD_SWEEP_PARQUET = `${DATA_BASE}/jaccard_sweep.parquet`;
 export const QUARTILE_PARQUET = `${DATA_BASE}/quartile.parquet`;
 export const DISTRIBUTIONS_PARQUET = `${DATA_BASE}/distributions.parquet`;
+export const MORAN_PARQUET = `${DATA_BASE}/moran.parquet`;
+export const LISA_AGREEMENT_PARQUET = `${DATA_BASE}/lisa_agreement.parquet`;
+export const COMPOSITE_PARQUET = `${DATA_BASE}/composite.parquet`;
+export const HIGHLOW_SUMMARY_PARQUET = `${DATA_BASE}/highlow_summary.parquet`;
+export const HIGHLOW_CLASS_PARQUET = `${DATA_BASE}/highlow_class.parquet`;
+
+export const HIGHLOW_METHODS = ["absolute_50", "median_split", "mean_split", "tercile", "quartile", "stddev"] as const;
+export type HighLowMethod = (typeof HIGHLOW_METHODS)[number];
 
 /** Bounds for `fitBounds` / initial map view (Seattle CBSA). */
 export const SEATTLE_BBOX: [number, number, number, number] = [-122.95, 47.0, -121.45, 48.4];

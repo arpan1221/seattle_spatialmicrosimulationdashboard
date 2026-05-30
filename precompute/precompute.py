@@ -532,6 +532,220 @@ def main() -> None:
     print(f"[precompute]   distributions: {len(dist_rows)} rows")
 
     print("[precompute] Phase 2 complete.")
+
+    # ------------------------------------------------------------------
+    # Phase 3: Moran's I, LISA, composite radar, high/low classification.
+    # ------------------------------------------------------------------
+    print("[precompute] Phase 3: spatial autocorrelation + composite + high/low...")
+
+    from libpysal.weights import Queen
+    from esda.moran import Moran, Moran_Local
+
+    # Build a Queen contiguity weight matrix once from the tract polygons,
+    # restricted to GEOIDs that appear in `base` (i.e. all that we have data for).
+    tracts_for_w = tracts.copy()
+    tracts_for_w["GEOID"] = tracts_for_w["GEOID"].astype(str).str.zfill(11)
+    tracts_for_w = tracts_for_w[tracts_for_w["GEOID"].isin(set(base["GEOID"]))].reset_index(drop=True)
+    w = Queen.from_dataframe(tracts_for_w, use_index=False)
+    w.transform = "r"
+    geoid_order = tracts_for_w["GEOID"].tolist()
+
+    moran_rows: list[dict] = []
+    lisa_rows: list[dict] = []
+    lisa_lookup: dict[tuple[str, str], dict[str, dict]] = {}
+
+    def value_series(model_key: str, value_col: str) -> "pd.Series | None":
+        sub = base[base["model"] == model_key].set_index("GEOID")[value_col]
+        sub = sub.reindex(geoid_order)
+        if sub.isna().any():
+            sub = sub.fillna(sub.mean())
+        return sub
+
+    for model_key in base["model"].unique():
+        for cluster_type in CLUSTER_TYPES:
+            value_col = "prop_yes" if cluster_type == "yes" else "prop_no"
+            series = value_series(model_key, value_col)
+            if series is None:
+                continue
+            arr = series.values.astype(float)
+            mi = Moran(arr, w, permutations=199)
+            mi_local = Moran_Local(arr, w, permutations=199)
+            moran_rows.append({
+                "model": model_key,
+                "cluster_type": cluster_type,
+                "moran_i": float(mi.I),
+                "moran_p": float(mi.p_sim),
+                "moran_z": float(mi.z_sim),
+                "expected_i": float(mi.EI),
+            })
+            sigs = mi_local.p_sim < 0.05
+            quads = mi_local.q
+            # quadrants: 1=HH, 2=LH, 3=LL, 4=HL
+            row_lookup: dict[str, dict] = {}
+            for geo, sig, quad in zip(geoid_order, sigs, quads):
+                row_lookup[geo] = {"significant": bool(sig), "quadrant": int(quad)}
+            lisa_lookup[(model_key, cluster_type)] = row_lookup
+
+    moran_df = pd.DataFrame(moran_rows)
+    moran_df.to_parquet(paths.out_dir / "moran.parquet", index=False)
+    print(f"[precompute]   moran: {len(moran_df)} rows")
+
+    # LISA agreement = % tracts where (gt significant) matches (model significant)
+    lisa_agreement_rows: list[dict] = []
+    for cluster_type in CLUSTER_TYPES:
+        gt = lisa_lookup.get(("gt", cluster_type))
+        if gt is None:
+            continue
+        for model_key in [k for k in base["model"].unique() if k != "gt"]:
+            md = lisa_lookup.get((model_key, cluster_type))
+            if md is None:
+                continue
+            same_sig = sum(1 for g in geoid_order if gt[g]["significant"] == md[g]["significant"])
+            same_quad = sum(1 for g in geoid_order if gt[g]["quadrant"] == md[g]["quadrant"])
+            lisa_agreement_rows.append({
+                "model": model_key,
+                "cluster_type": cluster_type,
+                "lisa_significance_agreement": same_sig / len(geoid_order),
+                "lisa_regime_agreement": same_quad / len(geoid_order),
+                "n_tracts": len(geoid_order),
+            })
+
+            # Per-tract LISA rows (only for selected model; gt always)
+            for g in geoid_order:
+                lisa_rows.append({
+                    "GEOID": g,
+                    "model": model_key,
+                    "cluster_type": cluster_type,
+                    "gt_significant": gt[g]["significant"],
+                    "gt_quadrant": gt[g]["quadrant"],
+                    "model_significant": md[g]["significant"],
+                    "model_quadrant": md[g]["quadrant"],
+                })
+    lisa_agreement_df = pd.DataFrame(lisa_agreement_rows)
+    lisa_agreement_df.to_parquet(paths.out_dir / "lisa_agreement.parquet", index=False)
+    lisa_per_tract_df = pd.DataFrame(lisa_rows)
+    lisa_per_tract_df.to_parquet(paths.out_dir / "lisa_per_tract.parquet", index=False)
+    print(f"[precompute]   lisa_agreement: {len(lisa_agreement_df)} rows")
+    print(f"[precompute]   lisa_per_tract: {len(lisa_per_tract_df)} rows")
+
+    # Composite radar = weighted blend (matches streamlit_comprehensive_app.py)
+    composite_rows: list[dict] = []
+    quart_lookup = {
+        (r["model"], r["cluster_type"], r["percentile"]): r for r in quartile_rows
+    }
+    moran_lookup = {(r["model"], r["cluster_type"]): r for r in moran_rows if r["model"] != "gt"}
+    moran_gt = {r["cluster_type"]: r for r in moran_rows if r["model"] == "gt"}
+    lisa_lookup_df = {
+        (r["model"], r["cluster_type"]): r for r in lisa_agreement_rows
+    }
+    for model_key in [k for k in base["model"].unique() if k != "gt"]:
+        for ct in CLUSTER_TYPES:
+            hi_q = quart_lookup.get((model_key, ct, "P75"))
+            lo_q = quart_lookup.get((model_key, ct, "P25"))
+            mi = moran_lookup.get((model_key, ct))
+            mi_gt = moran_gt.get(ct)
+            la = lisa_lookup_df.get((model_key, ct))
+            if not (hi_q and lo_q and mi and mi_gt and la):
+                continue
+            high_jacc = hi_q["high_jaccard"]
+            low_jacc = lo_q["low_jaccard"]
+            moran_sim = max(0.0, 1.0 - abs(mi["moran_i"] - mi_gt["moran_i"]))
+            lisa_agree = la["lisa_significance_agreement"]
+            iqr_ratio = hi_q["iqr_ratio"]
+            composite = (
+                0.30 * high_jacc
+                + 0.20 * low_jacc
+                + 0.20 * moran_sim
+                + 0.15 * lisa_agree
+                + 0.15 * iqr_ratio
+            )
+            composite_rows.append({
+                "model": model_key,
+                "cluster_type": ct,
+                "high_jaccard": float(high_jacc),
+                "low_jaccard": float(low_jacc),
+                "moran_similarity": float(moran_sim),
+                "lisa_agreement": float(lisa_agree),
+                "iqr_ratio": float(iqr_ratio),
+                "composite": float(composite),
+            })
+    composite_df = pd.DataFrame(composite_rows)
+    composite_df.to_parquet(paths.out_dir / "composite.parquet", index=False)
+    print(f"[precompute]   composite: {len(composite_df)} rows")
+
+    # High/Low classification.
+    # For each model + cluster_type, classify every tract using a fixed bank of
+    # threshold methods (the same set streamlit offered). Compare against the
+    # ground-truth classification with the same method.
+    HIGHLOW_METHODS = ["absolute_50", "median_split", "mean_split", "tercile", "quartile", "stddev"]
+
+    def classify(values: np.ndarray, method: str) -> np.ndarray:
+        if method == "absolute_50":
+            out = np.where(values >= 0.50, "HIGH", "LOW")
+        elif method == "median_split":
+            m = float(np.median(values))
+            out = np.where(values >= m, "HIGH", "LOW")
+        elif method == "mean_split":
+            m = float(np.mean(values))
+            out = np.where(values >= m, "HIGH", "LOW")
+        elif method == "tercile":
+            t1, t2 = np.quantile(values, [1 / 3, 2 / 3])
+            out = np.where(values >= t2, "HIGH", np.where(values >= t1, "MID", "LOW"))
+        elif method == "quartile":
+            q1, q2, q3 = np.quantile(values, [0.25, 0.50, 0.75])
+            out = np.where(values >= q3, "Q4",
+                  np.where(values >= q2, "Q3",
+                  np.where(values >= q1, "Q2", "Q1")))
+        elif method == "stddev":
+            mu = float(np.mean(values))
+            sd = float(np.std(values))
+            out = np.where(values >= mu + sd, "HIGH",
+                  np.where(values <= mu - sd, "LOW", "MID"))
+        else:
+            raise ValueError(f"unknown method {method}")
+        return out
+
+    highlow_class_rows: list[dict] = []
+    highlow_summary_rows: list[dict] = []
+    for ct in CLUSTER_TYPES:
+        value_col = "prop_yes" if ct == "yes" else "prop_no"
+        gt_series = value_series("gt", value_col)
+        if gt_series is None:
+            continue
+        for method in HIGHLOW_METHODS:
+            gt_cls = classify(gt_series.values, method)
+            gt_by_id = dict(zip(geoid_order, gt_cls))
+            for model_key in [k for k in base["model"].unique() if k != "gt"]:
+                md_series = value_series(model_key, value_col)
+                if md_series is None:
+                    continue
+                md_cls = classify(md_series.values, method)
+                agreement = sum(1 for g, mv in zip(geoid_order, md_cls) if gt_by_id[g] == mv) / len(geoid_order)
+                gt_counts = pd.Series(gt_cls).value_counts().to_dict()
+                md_counts = pd.Series(md_cls).value_counts().to_dict()
+                highlow_summary_rows.append({
+                    "model": model_key,
+                    "cluster_type": ct,
+                    "method": method,
+                    "accuracy": float(agreement),
+                    "gt_counts": json.dumps(gt_counts),
+                    "model_counts": json.dumps(md_counts),
+                    "n_tracts": len(geoid_order),
+                })
+                for g, gc, mc in zip(geoid_order, gt_cls, md_cls):
+                    highlow_class_rows.append({
+                        "GEOID": g, "model": model_key, "cluster_type": ct, "method": method,
+                        "gt_class": str(gc), "model_class": str(mc),
+                    })
+
+    highlow_summary_df = pd.DataFrame(highlow_summary_rows)
+    highlow_summary_df.to_parquet(paths.out_dir / "highlow_summary.parquet", index=False)
+    highlow_class_df = pd.DataFrame(highlow_class_rows)
+    highlow_class_df.to_parquet(paths.out_dir / "highlow_class.parquet", index=False)
+    print(f"[precompute]   highlow_summary: {len(highlow_summary_df)} rows")
+    print(f"[precompute]   highlow_class:   {len(highlow_class_df)} rows")
+
+    print("[precompute] Phase 3 complete.")
     print(f"[precompute]   {paths.out_dir / 'models.parquet'}")
     print(f"[precompute]   {paths.out_dir / 'cluster_labels.parquet'}")
     print(f"[precompute]   {paths.out_dir / 'cluster_stats.parquet'}")

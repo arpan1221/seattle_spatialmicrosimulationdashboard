@@ -10,6 +10,11 @@ import {
   JACCARD_SWEEP_PARQUET,
   QUARTILE_PARQUET,
   DISTRIBUTIONS_PARQUET,
+  MORAN_PARQUET,
+  LISA_AGREEMENT_PARQUET,
+  COMPOSITE_PARQUET,
+  HIGHLOW_SUMMARY_PARQUET,
+  HIGHLOW_CLASS_PARQUET,
 } from "@/lib/data";
 
 let registered = false;
@@ -246,6 +251,161 @@ export async function fetchDistributions(
       else md.push(o.value);
     }
     return { gt, model: md };
+  } finally {
+    await conn.close();
+  }
+}
+
+export interface SpatialRow {
+  moran_i: number;
+  moran_p: number;
+  moran_z: number;
+  expected_i: number;
+  lisa_significance_agreement: number;
+  lisa_regime_agreement: number;
+  gt_moran_i: number;
+  gt_moran_p: number;
+}
+
+export async function fetchSpatial(
+  model: string, clusterType: "yes" | "no",
+): Promise<SpatialRow | null> {
+  await registerParquetFiles();
+  const db = await getDuckDB();
+  const conn = await db.connect();
+  try {
+    const sql = `
+      WITH model_m AS (
+        SELECT * FROM read_parquet('${absUrl(MORAN_PARQUET)}')
+        WHERE model = '${model}' AND cluster_type = '${clusterType}'
+      ),
+      gt_m AS (
+        SELECT * FROM read_parquet('${absUrl(MORAN_PARQUET)}')
+        WHERE model = 'gt' AND cluster_type = '${clusterType}'
+      ),
+      lisa AS (
+        SELECT * FROM read_parquet('${absUrl(LISA_AGREEMENT_PARQUET)}')
+        WHERE model = '${model}' AND cluster_type = '${clusterType}'
+      )
+      SELECT
+        m.moran_i, m.moran_p, m.moran_z, m.expected_i,
+        l.lisa_significance_agreement, l.lisa_regime_agreement,
+        g.moran_i AS gt_moran_i, g.moran_p AS gt_moran_p
+      FROM model_m m, gt_m g, lisa l
+      LIMIT 1;
+    `;
+    const r = await conn.query(sql);
+    const rows = r.toArray();
+    if (!rows.length) return null;
+    return rows[0].toJSON() as SpatialRow;
+  } finally {
+    await conn.close();
+  }
+}
+
+export interface CompositeRow {
+  model: string;
+  cluster_type: string;
+  high_jaccard: number;
+  low_jaccard: number;
+  moran_similarity: number;
+  lisa_agreement: number;
+  iqr_ratio: number;
+  composite: number;
+}
+
+export async function fetchComposite(
+  model: string, clusterType: "yes" | "no",
+): Promise<CompositeRow | null> {
+  await registerParquetFiles();
+  const db = await getDuckDB();
+  const conn = await db.connect();
+  try {
+    const sql = `
+      SELECT * FROM read_parquet('${absUrl(COMPOSITE_PARQUET)}')
+      WHERE model = '${model}' AND cluster_type = '${clusterType}' LIMIT 1;
+    `;
+    const r = await conn.query(sql);
+    const rows = r.toArray();
+    if (!rows.length) return null;
+    return rows[0].toJSON() as CompositeRow;
+  } finally {
+    await conn.close();
+  }
+}
+
+/** Composite scores for every model — handy for the "best model" leaderboard. */
+export async function fetchCompositeLeaderboard(
+  clusterType: "yes" | "no",
+): Promise<CompositeRow[]> {
+  await registerParquetFiles();
+  const db = await getDuckDB();
+  const conn = await db.connect();
+  try {
+    const sql = `
+      SELECT * FROM read_parquet('${absUrl(COMPOSITE_PARQUET)}')
+      WHERE cluster_type = '${clusterType}'
+      ORDER BY composite DESC;
+    `;
+    const r = await conn.query(sql);
+    return r.toArray().map((row) => row.toJSON() as CompositeRow);
+  } finally {
+    await conn.close();
+  }
+}
+
+export interface HighLowSummary {
+  model: string;
+  cluster_type: string;
+  method: string;
+  accuracy: number;
+  gt_counts: string;
+  model_counts: string;
+  n_tracts: number;
+}
+
+export async function fetchHighLowSummary(
+  model: string, clusterType: "yes" | "no", method: string,
+): Promise<HighLowSummary | null> {
+  await registerParquetFiles();
+  const db = await getDuckDB();
+  const conn = await db.connect();
+  try {
+    const sql = `
+      SELECT * FROM read_parquet('${absUrl(HIGHLOW_SUMMARY_PARQUET)}')
+      WHERE model = '${model}' AND cluster_type = '${clusterType}' AND method = '${method}' LIMIT 1;
+    `;
+    const r = await conn.query(sql);
+    const rows = r.toArray();
+    if (!rows.length) return null;
+    return rows[0].toJSON() as HighLowSummary;
+  } finally {
+    await conn.close();
+  }
+}
+
+export interface ConfusionRow {
+  gt_class: string;
+  model_class: string;
+  count: number;
+}
+
+export async function fetchHighLowConfusion(
+  model: string, clusterType: "yes" | "no", method: string,
+): Promise<ConfusionRow[]> {
+  await registerParquetFiles();
+  const db = await getDuckDB();
+  const conn = await db.connect();
+  try {
+    const sql = `
+      SELECT gt_class, model_class, COUNT(*)::INT AS count
+      FROM read_parquet('${absUrl(HIGHLOW_CLASS_PARQUET)}')
+      WHERE model = '${model}' AND cluster_type = '${clusterType}' AND method = '${method}'
+      GROUP BY 1, 2
+      ORDER BY 1, 2;
+    `;
+    const r = await conn.query(sql);
+    return r.toArray().map((row) => row.toJSON() as ConfusionRow);
   } finally {
     await conn.close();
   }
