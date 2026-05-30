@@ -37,20 +37,20 @@ const COUNTIES_LAYER_ID = "counties-outline";
  */
 const RAMPS = {
   evergreen: [
-    [0.00, "oklch(0.32 0.04 165 / 0.55)"],
-    [0.10, "oklch(0.42 0.06 165 / 0.75)"],
-    [0.30, "oklch(0.55 0.10 165 / 0.85)"],
-    [0.50, "oklch(0.68 0.13 165 / 0.92)"],
-    [0.75, "oklch(0.80 0.15 165 / 0.96)"],
-    [1.00, "oklch(0.92 0.16 160 / 1.00)"],
+    [0.00, "rgba(40, 70, 60, 0.55)"],
+    [0.10, "rgba(55, 100, 80, 0.75)"],
+    [0.30, "rgba(60, 145, 110, 0.85)"],
+    [0.50, "rgba(85, 195, 145, 0.92)"],
+    [0.75, "rgba(120, 235, 180, 0.96)"],
+    [1.00, "rgba(155, 255, 200, 1.00)"],
   ],
   salmon: [
-    [0.00, "oklch(0.30 0.04 30 / 0.55)"],
-    [0.10, "oklch(0.42 0.06 30 / 0.75)"],
-    [0.30, "oklch(0.55 0.11 30 / 0.85)"],
-    [0.50, "oklch(0.70 0.14 30 / 0.92)"],
-    [0.75, "oklch(0.82 0.16 30 / 0.96)"],
-    [1.00, "oklch(0.92 0.17 35 / 1.00)"],
+    [0.00, "rgba(60, 40, 30, 0.55)"],
+    [0.10, "rgba(105, 70, 55, 0.75)"],
+    [0.30, "rgba(160, 100, 75, 0.85)"],
+    [0.50, "rgba(220, 140, 105, 0.92)"],
+    [0.75, "rgba(250, 175, 140, 0.96)"],
+    [1.00, "rgba(255, 200, 160, 1.00)"],
   ],
 } as const;
 
@@ -61,7 +61,7 @@ function rampPaintExpr(variant: "evergreen" | "salmon"): unknown[] {
   return [
     "case",
     ["==", ["feature-state", "value"], null],
-    "oklch(0.22 0.013 240 / 0.4)",
+    "rgba(38, 43, 50, 0.40)",
     out,
   ];
 }
@@ -114,7 +114,7 @@ export function TractMap({ source, title, variant, modelKey }: TractMapProps) {
         source: TRACT_SOURCE_ID,
         "source-layer": "tracts",
         paint: {
-          "line-color": "oklch(0.92 0.012 80 / 0.10)",
+          "line-color": "rgba(232, 225, 212, 0.10)",
           "line-width": 0.4,
         },
       });
@@ -126,7 +126,7 @@ export function TractMap({ source, title, variant, modelKey }: TractMapProps) {
         source: TRACT_SOURCE_ID,
         "source-layer": "tracts",
         paint: {
-          "line-color": "oklch(0.94 0.012 80 / 0.95)",
+          "line-color": "rgba(237, 230, 217, 0.95)",
           "line-width": [
             "case", ["boolean", ["feature-state", "hover"], false], 1.4, 0,
           ],
@@ -142,7 +142,7 @@ export function TractMap({ source, title, variant, modelKey }: TractMapProps) {
           type: "line",
           source: COUNTIES_SOURCE_ID,
           paint: {
-            "line-color": "oklch(0.94 0.012 80 / 0.55)",
+            "line-color": "rgba(237, 230, 217, 0.55)",
             "line-width": 0.9,
             "line-dasharray": [3, 2],
           },

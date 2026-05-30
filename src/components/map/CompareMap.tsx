@@ -29,22 +29,25 @@ const COUNTIES_SOURCE = "counties";
 const COUNTIES_LAYER = "counties-outline";
 const TRACT_HOVER = "tracts-hover";
 
+// MapLibre's style spec validates colours through csscolorparser, which
+// does NOT understand oklch(). Keep these as rgba() strings (sRGB
+// approximations of the OKLCH values we use elsewhere in CSS).
 const RAMPS = {
   evergreen: [
-    [0.00, "oklch(0.30 0.04 165 / 0.55)"],
-    [0.10, "oklch(0.42 0.06 165 / 0.78)"],
-    [0.30, "oklch(0.55 0.10 165 / 0.88)"],
-    [0.50, "oklch(0.68 0.13 165 / 0.93)"],
-    [0.75, "oklch(0.80 0.15 165 / 0.97)"],
-    [1.00, "oklch(0.92 0.16 160 / 1.00)"],
+    [0.00, "rgba(35, 65, 55, 0.55)"],
+    [0.10, "rgba(55, 100, 80, 0.78)"],
+    [0.30, "rgba(60, 145, 110, 0.88)"],
+    [0.50, "rgba(85, 195, 145, 0.93)"],
+    [0.75, "rgba(120, 235, 180, 0.97)"],
+    [1.00, "rgba(155, 255, 200, 1.00)"],
   ],
   salmon: [
-    [0.00, "oklch(0.28 0.04 30 / 0.55)"],
-    [0.10, "oklch(0.42 0.06 30 / 0.78)"],
-    [0.30, "oklch(0.55 0.11 30 / 0.88)"],
-    [0.50, "oklch(0.70 0.14 30 / 0.93)"],
-    [0.75, "oklch(0.82 0.16 30 / 0.97)"],
-    [1.00, "oklch(0.92 0.17 35 / 1.00)"],
+    [0.00, "rgba(65, 40, 30, 0.55)"],
+    [0.10, "rgba(105, 70, 55, 0.78)"],
+    [0.30, "rgba(160, 100, 75, 0.88)"],
+    [0.50, "rgba(220, 140, 105, 0.93)"],
+    [0.75, "rgba(250, 175, 140, 0.97)"],
+    [1.00, "rgba(255, 200, 160, 1.00)"],
   ],
 } as const;
 
@@ -57,7 +60,7 @@ function rampExpr(variant: Variant): unknown[] {
   return [
     "case",
     ["==", ["feature-state", "value"], null],
-    "oklch(0.20 0.013 240 / 0.25)",
+    "rgba(34, 39, 46, 0.25)",
     interp,
   ];
 }
@@ -127,7 +130,7 @@ export function CompareMap() {
           source: TRACT_SOURCE,
           "source-layer": "tracts",
           paint: {
-            "line-color": "oklch(0.92 0.012 80 / 0.10)",
+            "line-color": "rgba(232, 225, 212, 0.10)",
             "line-width": 0.4,
           },
         });
@@ -137,7 +140,7 @@ export function CompareMap() {
           source: TRACT_SOURCE,
           "source-layer": "tracts",
           paint: {
-            "line-color": "oklch(0.94 0.012 80 / 0.95)",
+            "line-color": "rgba(237, 230, 217, 0.95)",
             "line-width": [
               "case", ["boolean", ["feature-state", "hover"], false], 1.4, 0,
             ],
@@ -154,7 +157,7 @@ export function CompareMap() {
               type: "line",
               source: COUNTIES_SOURCE,
               paint: {
-                "line-color": "oklch(0.94 0.012 80 / 0.50)",
+                "line-color": "rgba(237, 230, 217, 0.50)",
                 "line-width": 0.9,
                 "line-dasharray": [3, 2],
               },
