@@ -415,7 +415,123 @@ def main() -> None:
     if len(matches):
         matches.to_parquet(paths.out_dir / "cluster_matches.parquet", index=False)
 
-    print("[precompute] Phase 1 complete.")
+    # ------------------------------------------------------------------
+    # Phase 2: per-tract distributions, Jaccard/Dice sweep, quartile stats.
+    # All keyed on (model, cluster_type). Ground truth is referenced as gt.
+    # ------------------------------------------------------------------
+    print("[precompute] Phase 2: Jaccard/Dice sweep + quartile analysis...")
+
+    from scipy.stats import ks_2samp
+
+    # Wide table: GEOID × (gt_yes, gt_no, df2_yes, df2_no, ...)
+    pivot = base.pivot_table(
+        index="GEOID", columns="model", values=["prop_yes", "prop_no"]
+    )
+
+    jaccard_rows: list[dict] = []
+    for model_key in [k for k in base["model"].unique() if k != "gt"]:
+        for cluster_type in CLUSTER_TYPES:
+            col = "prop_yes" if cluster_type == "yes" else "prop_no"
+            try:
+                gt_series = pivot[col]["gt"].dropna()
+                model_series = pivot[col][model_key].dropna()
+            except KeyError:
+                continue
+            common = gt_series.index.intersection(model_series.index)
+            gt_vals = gt_series.loc[common]
+            md_vals = model_series.loc[common]
+            for thr in [round(0.10 + 0.05 * i, 2) for i in range(18)]:
+                gt_set = set(gt_vals[gt_vals >= thr].index)
+                md_set = set(md_vals[md_vals >= thr].index)
+                inter = len(gt_set & md_set)
+                union = len(gt_set | md_set)
+                jaccard = inter / union if union else 0.0
+                denom = len(gt_set) + len(md_set)
+                dice = 2 * inter / denom if denom else 0.0
+                jaccard_rows.append({
+                    "model": model_key,
+                    "cluster_type": cluster_type,
+                    "threshold": thr,
+                    "jaccard": jaccard,
+                    "dice": dice,
+                    "gt_count": len(gt_set),
+                    "model_count": len(md_set),
+                    "intersection": inter,
+                    "union": union,
+                })
+    jaccard_df = pd.DataFrame(jaccard_rows)
+    jaccard_df.to_parquet(paths.out_dir / "jaccard_sweep.parquet", index=False)
+    print(f"[precompute]   jaccard_sweep: {len(jaccard_df)} rows")
+
+    # Quartile analysis at P25 / P50 / P75. For each:
+    #   - high concentration = tracts >= percentile
+    #   - low  concentration = tracts <= percentile
+    #   - Jaccard between gt and model for each side
+    # Plus IQR ratio (min/max of IQRs) and KS statistic per (model, cluster_type).
+    quartile_rows: list[dict] = []
+    for model_key in [k for k in base["model"].unique() if k != "gt"]:
+        for cluster_type in CLUSTER_TYPES:
+            col = "prop_yes" if cluster_type == "yes" else "prop_no"
+            try:
+                gt_series = pivot[col]["gt"].dropna()
+                model_series = pivot[col][model_key].dropna()
+            except KeyError:
+                continue
+            common = gt_series.index.intersection(model_series.index)
+            gt_vals = gt_series.loc[common]
+            md_vals = model_series.loc[common]
+
+            gt_q25, gt_q50, gt_q75 = np.quantile(gt_vals, [0.25, 0.50, 0.75])
+            md_q25, md_q50, md_q75 = np.quantile(md_vals, [0.25, 0.50, 0.75])
+            gt_iqr = gt_q75 - gt_q25
+            md_iqr = md_q75 - md_q25
+            iqr_ratio = (
+                min(gt_iqr, md_iqr) / max(gt_iqr, md_iqr) if max(gt_iqr, md_iqr) > 0 else 0.0
+            )
+            ks_stat, ks_p = ks_2samp(gt_vals, md_vals)
+
+            for pct_label, gt_thr, md_thr in [
+                ("P25", gt_q25, md_q25), ("P50", gt_q50, md_q50), ("P75", gt_q75, md_q75),
+            ]:
+                gt_high = set(gt_vals[gt_vals >= gt_thr].index)
+                md_high = set(md_vals[md_vals >= md_thr].index)
+                gt_low  = set(gt_vals[gt_vals <= gt_thr].index)
+                md_low  = set(md_vals[md_vals <= md_thr].index)
+
+                def jacc(a: set, b: set) -> float:
+                    u = len(a | b)
+                    return (len(a & b) / u) if u else 0.0
+
+                quartile_rows.append({
+                    "model": model_key,
+                    "cluster_type": cluster_type,
+                    "percentile": pct_label,
+                    "gt_threshold": float(gt_thr),
+                    "model_threshold": float(md_thr),
+                    "high_jaccard": jacc(gt_high, md_high),
+                    "low_jaccard":  jacc(gt_low, md_low),
+                    "high_intersection": len(gt_high & md_high),
+                    "gt_only_high": len(gt_high - md_high),
+                    "model_only_high": len(md_high - gt_high),
+                    "gt_iqr": float(gt_iqr),
+                    "model_iqr": float(md_iqr),
+                    "iqr_ratio": float(iqr_ratio),
+                    "ks_stat": float(ks_stat),
+                    "ks_pvalue": float(ks_p),
+                })
+    quartile_df = pd.DataFrame(quartile_rows)
+    quartile_df.to_parquet(paths.out_dir / "quartile.parquet", index=False)
+    print(f"[precompute]   quartile: {len(quartile_df)} rows")
+
+    # Per-tract distribution rows for histograms (rebuilt fresh; small).
+    dist_rows = (
+        base[["model", "GEOID", "prop_yes", "prop_no"]]
+        .rename(columns={"model": "model"})
+    )
+    dist_rows.to_parquet(paths.out_dir / "distributions.parquet", index=False)
+    print(f"[precompute]   distributions: {len(dist_rows)} rows")
+
+    print("[precompute] Phase 2 complete.")
     print(f"[precompute]   {paths.out_dir / 'models.parquet'}")
     print(f"[precompute]   {paths.out_dir / 'cluster_labels.parquet'}")
     print(f"[precompute]   {paths.out_dir / 'cluster_stats.parquet'}")

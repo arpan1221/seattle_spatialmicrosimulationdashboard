@@ -13,6 +13,9 @@ export const CLUSTER_LABELS_PARQUET = `${DATA_BASE}/cluster_labels.parquet`;
 export const CLUSTER_STATS_PARQUET = `${DATA_BASE}/cluster_stats.parquet`;
 export const ANALYSIS_PARQUET = `${DATA_BASE}/analysis.parquet`;
 export const CLUSTER_MATCHES_PARQUET = `${DATA_BASE}/cluster_matches.parquet`;
+export const JACCARD_SWEEP_PARQUET = `${DATA_BASE}/jaccard_sweep.parquet`;
+export const QUARTILE_PARQUET = `${DATA_BASE}/quartile.parquet`;
+export const DISTRIBUTIONS_PARQUET = `${DATA_BASE}/distributions.parquet`;
 
 /** Bounds for `fitBounds` / initial map view (Seattle CBSA). */
 export const SEATTLE_BBOX: [number, number, number, number] = [-122.95, 47.0, -121.45, 48.4];

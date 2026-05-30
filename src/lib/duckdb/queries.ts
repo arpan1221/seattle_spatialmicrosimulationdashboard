@@ -7,6 +7,9 @@ import {
   ANALYSIS_PARQUET,
   CLUSTER_MATCHES_PARQUET,
   CLUSTER_STATS_PARQUET,
+  JACCARD_SWEEP_PARQUET,
+  QUARTILE_PARQUET,
+  DISTRIBUTIONS_PARQUET,
 } from "@/lib/data";
 
 let registered = false;
@@ -145,6 +148,104 @@ export async function fetchMatches(
     `;
     const result = await conn.query(sql);
     return result.toArray().map((r) => r.toJSON() as MatchRow);
+  } finally {
+    await conn.close();
+  }
+}
+
+export interface JaccardRow {
+  model: string;
+  cluster_type: string;
+  threshold: number;
+  jaccard: number;
+  dice: number;
+  gt_count: number;
+  model_count: number;
+  intersection: number;
+  union: number;
+}
+
+export async function fetchJaccardSweep(
+  model: string, clusterType: "yes" | "no",
+): Promise<JaccardRow[]> {
+  await registerParquetFiles();
+  const db = await getDuckDB();
+  const conn = await db.connect();
+  try {
+    const sql = `
+      SELECT *
+      FROM read_parquet('${absUrl(JACCARD_SWEEP_PARQUET)}')
+      WHERE model = '${model}' AND cluster_type = '${clusterType}'
+      ORDER BY threshold;
+    `;
+    const r = await conn.query(sql);
+    return r.toArray().map((row) => row.toJSON() as JaccardRow);
+  } finally {
+    await conn.close();
+  }
+}
+
+export interface QuartileRow {
+  model: string;
+  cluster_type: string;
+  percentile: "P25" | "P50" | "P75";
+  gt_threshold: number;
+  model_threshold: number;
+  high_jaccard: number;
+  low_jaccard: number;
+  high_intersection: number;
+  gt_only_high: number;
+  model_only_high: number;
+  gt_iqr: number;
+  model_iqr: number;
+  iqr_ratio: number;
+  ks_stat: number;
+  ks_pvalue: number;
+}
+
+export async function fetchQuartile(
+  model: string, clusterType: "yes" | "no",
+): Promise<QuartileRow[]> {
+  await registerParquetFiles();
+  const db = await getDuckDB();
+  const conn = await db.connect();
+  try {
+    const sql = `
+      SELECT *
+      FROM read_parquet('${absUrl(QUARTILE_PARQUET)}')
+      WHERE model = '${model}' AND cluster_type = '${clusterType}'
+      ORDER BY percentile;
+    `;
+    const r = await conn.query(sql);
+    return r.toArray().map((row) => row.toJSON() as QuartileRow);
+  } finally {
+    await conn.close();
+  }
+}
+
+/** Per-tract proportions for histogram (gt + model). */
+export async function fetchDistributions(
+  model: string, clusterType: "yes" | "no",
+): Promise<{ gt: number[]; model: number[] }> {
+  await registerParquetFiles();
+  const db = await getDuckDB();
+  const conn = await db.connect();
+  try {
+    const col = clusterType === "yes" ? "prop_yes" : "prop_no";
+    const sql = `
+      SELECT model, ${col} AS value
+      FROM read_parquet('${absUrl(DISTRIBUTIONS_PARQUET)}')
+      WHERE model IN ('gt', '${model}');
+    `;
+    const r = await conn.query(sql);
+    const gt: number[] = [];
+    const md: number[] = [];
+    for (const row of r.toArray()) {
+      const o = row.toJSON() as { model: string; value: number };
+      if (o.model === "gt") gt.push(o.value);
+      else md.push(o.value);
+    }
+    return { gt, model: md };
   } finally {
     await conn.close();
   }
