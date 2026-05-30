@@ -1,6 +1,6 @@
 "use client";
 
-import { DualMap } from "@/components/map/DualMap";
+import { CompareMap } from "@/components/map/CompareMap";
 import { Metrics } from "@/components/metrics/Metrics";
 
 export function OverviewTab() {
@@ -10,16 +10,18 @@ export function OverviewTab() {
         <div className="space-y-1.5">
           <span className="atlas-section-no">§ 00 — Cartographic spread</span>
           <h2 className="font-display text-[26px] font-medium leading-tight tracking-tight text-[var(--atlas-ink)]">
-            Two readings of the same geography
+            One geography, two readings
           </h2>
           <p className="max-w-[68ch] text-[13px] leading-relaxed text-[var(--atlas-ink-dim)]">
-            On the left, the household-travel survey&apos;s estimate of telework
-            prevalence in each tract. On the right, the selected synthetic-population
-            model&apos;s reproduction of the same field. Concentrations of activity
-            glow against the dark basemap; thresholds are visible at a glance.
+            The household-travel survey&apos;s estimate of telework prevalence is
+            painted in evergreen across every census tract; the selected
+            synthetic-population model is painted in salmon. Drag the curtain
+            in the middle of the map to scrub from one to the other — where
+            the two palettes disagree is where the model fails. Hover a
+            tract to read both numbers and the percentage-point difference.
           </p>
         </div>
-        <DualMap />
+        <CompareMap />
       </section>
       <Metrics />
     </div>

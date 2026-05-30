@@ -5,7 +5,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import { ensurePmtilesProtocol } from "@/lib/maplibre/pmtiles";
-import { basemapStyle, labelsLayer } from "@/lib/maplibre/style";
+import { basemapStyle } from "@/lib/maplibre/style";
 import { COUNTIES_GEOJSON, SEATTLE_BBOX, TRACTS_PMTILES } from "@/lib/data";
 import { fetchTracts, type TractRow } from "@/lib/duckdb/queries";
 import { useDashboardStore } from "@/lib/store/dashboard";
@@ -150,23 +150,6 @@ export function TractMap({ source, title, variant, modelKey }: TractMapProps) {
       } catch (e) {
         console.warn("counties overlay failed", e);
       }
-
-      // Place labels appear above everything.
-      map.addSource("carto-labels", {
-        type: "raster",
-        tiles: [
-          "https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}@2x.png",
-          "https://b.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}@2x.png",
-          "https://c.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}@2x.png",
-          "https://d.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}@2x.png",
-        ],
-        tileSize: 256,
-        maxzoom: 19,
-      });
-      map.addLayer({
-        ...labelsLayer,
-        source: "carto-labels",
-      });
 
       // Hover interaction.
       let lastHoverId: string | null = null;
